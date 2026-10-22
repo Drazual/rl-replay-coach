@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urlparse
 from . import statsapi
 from .library import Library, data_dir
 from .live.server import LiveServer
+from .update import Updater
 
 UI_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent)) / "rlcoach" / "ui"
 if not UI_DIR.is_dir():
@@ -34,6 +35,7 @@ LIB: Library | None = None
 WINDOW = None  # the pywebview window, when there is one
 STATS: statsapi.StatsClient | None = None
 LIVE: LiveServer | None = None
+UPDATER: Updater | None = None
 DEFAULT_PORT = 49209  # fixed so the BakkesMod plugin can tell the app is already open
 PLUGIN_DLL = UI_DIR.parent / "plugin" / "RLCoachLive.dll"
 LAST_PING: float | None = None  # when the UI last checked in; used to quit after the window closes
@@ -92,9 +94,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/trends":
             return self._json(lib.trends())
         if url.path == "/api/update":
-            from .update import check
-
-            return self._json(check())
+            return self._json(UPDATER.status())
         if url.path == "/api/live":
             return self._json(live_status(lib))
         if url.path == "/api/live/history":
@@ -114,8 +114,11 @@ class Handler(BaseHTTPRequestHandler):
                 lib.settings["player"] = (body["player"] or "").strip() or None
             if "folders" in body:
                 lib.settings["folders"] = [f for f in body["folders"] if f]
+            if "auto_update" in body:
+                lib.settings["auto_update"] = UPDATER.enabled = bool(body["auto_update"])
             lib.save_settings()
-            return self._json({"ok": True, "you": lib.you(), "folders": lib.settings["folders"]})
+            return self._json({"ok": True, "you": lib.you(), "folders": lib.settings["folders"],
+                               "auto_update": lib.settings.get("auto_update", True)})
         if url.path == "/api/pick-folder":
             folder = pick_folder()
             if folder and folder not in lib.settings["folders"]:
@@ -142,6 +145,14 @@ class Handler(BaseHTTPRequestHandler):
             if link.startswith("https://github.com/"):
                 webbrowser.open(link)
             return self._json({"ok": True})
+        if url.path == "/api/update/check":
+            threading.Thread(target=UPDATER.check_and_download, daemon=True).start()
+            return self._json({"ok": True})
+        if url.path == "/api/update/apply":
+            ok = UPDATER.apply_and_restart()
+            if ok:  # answer the page first, then get out of the updater's way
+                threading.Timer(0.8, lambda: os._exit(0)).start()
+            return self._json({"ok": ok})
         if url.path == "/api/live/enable-stats":
             install = statsapi.find_install(lib.settings.get("rl_install"))
             if install is None:
@@ -215,6 +226,18 @@ def install_plugin() -> dict:
     return {"ok": True, "path": str(bm / "plugins" / "RLCoachLive.dll")}
 
 
+def sync_plugin() -> None:
+    """After an update, refresh the installed BakkesMod plugin from the copy bundled in this version."""
+    target = _bakkesmod_dir() / "plugins" / "RLCoachLive.dll"
+    if not (target.is_file() and PLUGIN_DLL.is_file()):
+        return
+    try:
+        if target.read_bytes() != PLUGIN_DLL.read_bytes():
+            shutil.copy2(PLUGIN_DLL, target)
+    except OSError:
+        pass  # the game has it loaded right now; we will try again next start
+
+
 def plugin_installed() -> bool:
     return (_bakkesmod_dir() / "plugins" / "RLCoachLive.dll").is_file()
 
@@ -285,15 +308,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-window", action="store_true", help="only run the server (for testing)")
     args = ap.parse_args(argv)
 
-    global STATS, LIVE
+    global STATS, LIVE, UPDATER
+    if _already_running(args.port):  # the app is already open: just show it
+        webbrowser.open(f"http://127.0.0.1:{args.port}/" + ("#live" if args.live else ""))
+        return 0
+    LIB = Library()
+    UPDATER = Updater(data_dir(), enabled=LIB.settings.get("auto_update", True))
+    if UPDATER.pending_on_start() is not None:  # a verified update was downloaded last time: install it first
+        relaunch = (["--live"] if args.live else []) + (["--browser"] if args.browser else [])
+        if UPDATER.apply_and_restart(relaunch):
+            return 0
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     except OSError:
-        if _already_running(args.port):  # the app is already open: just show it
-            webbrowser.open(f"http://127.0.0.1:{args.port}/" + ("#live" if args.live else ""))
-            return 0
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    LIB = Library()
+    UPDATER.cleanup()
+    UPDATER.start()
+    sync_plugin()
     STATS = statsapi.StatsClient()
     LIVE = LiveServer(data_dir())
     _save_launch_command()

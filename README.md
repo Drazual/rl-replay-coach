@@ -33,6 +33,16 @@ The first time you open a replay it takes 5–20 seconds to analyse; after that 
 **Analyse all** does your whole folder in the background. Your settings and cache live in
 `%APPDATA%\rlcoach` (Windows) or `~/.rlcoach`.
 
+### Updates
+
+The app keeps itself up to date. A few seconds after it opens (and every 6 hours while it stays open)
+it checks this repository's latest GitHub release. If there is a newer version, it downloads
+`RLCoach.exe` in the background and checks it against the SHA-256 checksum GitHub publishes for it.
+A bar then offers **Restart to update**; if you ignore it, the new version is swapped in the next
+time you open the app. The BakkesMod plugin is refreshed from the new version too. Copies run from
+source (`RL Coach.bat` or pip) update with pip instead. Turn it off with **Settings → Update
+automatically**; **Check now** in the same place checks straight away.
+
 ## Live coaching
 
 Open **🎮 Live** in the app. There are two parts, and neither touches online matches.

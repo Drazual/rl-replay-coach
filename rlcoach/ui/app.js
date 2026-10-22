@@ -482,40 +482,28 @@ function renderSettings() {
   $("#set-folders").querySelectorAll("button").forEach((b) => b.onclick = async () => {
     const folders = state.folders.filter((_, i) => i !== +b.dataset.i);
     const r = await api("/api/settings", { folders }); state.folders = r.folders; renderSettings(); loadList();
-if (location.hash === "#live") renderLive();
-
-// Tell the user when a newer release is on GitHub.
-api("/api/update").then((u) => {
-  if (!u.available) return;
-  const bar = document.createElement("div");
-  bar.className = "update-bar";
-  bar.innerHTML = `RL Coach ${esc(u.latest)} is available (you have ${esc(u.current)}). <button class="primary">Download update</button> <button class="ghost">Later</button>`;
-  const [get, later] = bar.querySelectorAll("button");
-  get.onclick = () => api("/api/open-url", { url: u.exe || u.url });
-  later.onclick = () => bar.remove();
-  document.body.prepend(bar);
-}).catch(() => {});
   });
 }
 
-$("#btn-settings").onclick = () => { renderSettings(); $("#settings").showModal(); };
+$("#btn-settings").onclick = async () => {
+  renderSettings();
+  const u = await api("/api/update");
+  $("#set-auto-update").checked = u.auto;
+  $("#set-version").textContent = u.current + (u.latest && u.latest !== "v" + u.current ? ` (latest ${u.latest})` : "");
+  $("#settings").showModal();
+};
+$("#set-auto-update").onchange = (e) => api("/api/settings", { auto_update: e.target.checked });
+$("#check-now").onclick = async (e) => {
+  e.preventDefault();
+  await api("/api/update/check", {});
+  toast("Checking for updates…");
+  updateDismissed = false;
+  setTimeout(pollUpdate, 3000);
+};
 $("#settings").addEventListener("close", async () => {
   const name = $("#set-player").value.trim();
   if (name) { await api("/api/settings", { player: name }); }
   loadList();
-if (location.hash === "#live") renderLive();
-
-// Tell the user when a newer release is on GitHub.
-api("/api/update").then((u) => {
-  if (!u.available) return;
-  const bar = document.createElement("div");
-  bar.className = "update-bar";
-  bar.innerHTML = `RL Coach ${esc(u.latest)} is available (you have ${esc(u.current)}). <button class="primary">Download update</button> <button class="ghost">Later</button>`;
-  const [get, later] = bar.querySelectorAll("button");
-  get.onclick = () => api("/api/open-url", { url: u.exe || u.url });
-  later.onclick = () => bar.remove();
-  document.body.prepend(bar);
-}).catch(() => {});
 });
 async function addFolder() {
   const r = await api("/api/pick-folder", {});
@@ -527,19 +515,6 @@ $("#btn-add-folder-text").onclick = async () => {
   const f = $("#set-folder-text").value.trim(); if (!f) return;
   const r = await api("/api/settings", { folders: [...state.folders, f] });
   state.folders = r.folders; $("#set-folder-text").value = ""; renderSettings(); loadList();
-if (location.hash === "#live") renderLive();
-
-// Tell the user when a newer release is on GitHub.
-api("/api/update").then((u) => {
-  if (!u.available) return;
-  const bar = document.createElement("div");
-  bar.className = "update-bar";
-  bar.innerHTML = `RL Coach ${esc(u.latest)} is available (you have ${esc(u.current)}). <button class="primary">Download update</button> <button class="ghost">Later</button>`;
-  const [get, later] = bar.querySelectorAll("button");
-  get.onclick = () => api("/api/open-url", { url: u.exe || u.url });
-  later.onclick = () => bar.remove();
-  document.body.prepend(bar);
-}).catch(() => {});
 };
 $("#btn-trends").onclick = renderTrends;
 $("#btn-live").onclick = renderLive;
@@ -556,19 +531,6 @@ setInterval(async () => {
 setInterval(loadList, 30000);
 
 loadList();
-if (location.hash === "#live") renderLive();
-
-// Tell the user when a newer release is on GitHub.
-api("/api/update").then((u) => {
-  if (!u.available) return;
-  const bar = document.createElement("div");
-  bar.className = "update-bar";
-  bar.innerHTML = `RL Coach ${esc(u.latest)} is available (you have ${esc(u.current)}). <button class="primary">Download update</button> <button class="ghost">Later</button>`;
-  const [get, later] = bar.querySelectorAll("button");
-  get.onclick = () => api("/api/open-url", { url: u.exe || u.url });
-  later.onclick = () => bar.remove();
-  document.body.prepend(bar);
-}).catch(() => {});
 
 // ------------------------------------------------------------------ live: shared
 const LIVE = { status: null, lastSaid: new Set(), timer: null };
@@ -728,3 +690,32 @@ function drawLive() {
   $("#open-watching")?.addEventListener("click", () => openReplay(st.replay_id));
   $("#focus").querySelectorAll("button").forEach((b) => b.onclick = async () => { await api("/api/live/focus", { kind: b.dataset.k }); pollLive(); });
 }
+
+// ------------------------------------------------------------------ updates
+// The app downloads new versions by itself (Settings → Update automatically).
+// This bar shows progress and lets you restart into the new version now;
+// otherwise it installs the next time you open RL Coach.
+let updateDismissed = false;
+async function pollUpdate() {
+  let u;
+  try { u = await api("/api/update"); } catch { return; }
+  let bar = $("#update-bar");
+  if (!u.available || updateDismissed) { bar?.remove(); return; }
+  if (!bar) { bar = document.createElement("div"); bar.id = "update-bar"; bar.className = "update-bar"; document.body.prepend(bar); }
+  if (u.state === "downloading") {
+    bar.innerHTML = `<span class="spinner small-spin"></span> Downloading RL Coach ${esc(u.latest)}…`;
+  } else if (u.state === "ready") {
+    bar.innerHTML = `RL Coach ${esc(u.latest)} is ready (you have ${esc(u.current)}). <button class="primary" id="upd-now">Restart to update</button>
+      <button class="ghost" id="upd-later">${u.frozen ? "Install next time I open it" : "Later"}</button>`;
+    $("#upd-now").onclick = async () => {
+      bar.innerHTML = "Updating… RL Coach will reopen in a few seconds.";
+      const r = await api("/api/update/apply", {});
+      if (!r.ok) bar.innerHTML = "Couldn't update automatically. Download the new version from GitHub Releases.";
+    };
+    $("#upd-later").onclick = () => { updateDismissed = true; bar.remove(); };
+  }
+}
+pollUpdate();
+setInterval(pollUpdate, 15000);
+
+if (location.hash === "#live") renderLive();
