@@ -62,7 +62,7 @@ async function loadList() {
   const sel = $("#filter-mode"), cur = sel.value;
   sel.innerHTML = `<option value="">All modes</option>` + modes.map((m) => `<option ${m === cur ? "selected" : ""}>${esc(m)}</option>`).join("");
   renderList();
-  $("#empty").hidden = !!state.current;
+  $("#empty").hidden = !!state.current || !$("#view").hidden;  // keep it off the Live and trends pages
 }
 
 function displayName(r) {
@@ -534,7 +534,7 @@ loadList();
 
 // ------------------------------------------------------------------ live: shared
 const LIVE = { status: null, lastSaid: new Set(), timer: null };
-const MECH = [["", "Everything"], ["half_flip", "Half flip"], ["speed_flip", "Speed flip"], ["wavedash", "Wavedash"], ["fast_aerial", "Fast aerial"]];
+const MECH = [["", "Everything"], ["half_flip", "Half flip"], ["speed_flip", "Speed flip"], ["wavedash", "Wavedash"], ["zap_dash", "Zap dash"], ["fast_aerial", "Fast aerial"], ["flip_reset", "Flip reset"], ["air_dribble", "Air dribble"], ["ceiling_shot", "Ceiling shot"]];
 
 // replay frame <-> replay time, from the pairs the analysis saved
 function frameToTime(d, frame) {
@@ -664,7 +664,7 @@ function drawLive() {
       <h3>🎮 Mechanics trainer</h3>
       <div><b>${plState}</b></div>
       <p class="muted small">A small BakkesMod plugin that only runs when Rocket League is started <b>without Easy Anti-Cheat</b>, and never sends anything in online games.
-        It opens RL Coach automatically, grades every half flip, speed flip, wavedash, fast aerial and landing in free play or training, and shows a tip on screen.</p>
+        It opens RL Coach automatically, grades every half flip, speed flip, wavedash, zap dash, fast aerial, flip reset, air dribble, ceiling shot and landing in free play or training, and shows a tip on screen.</p>
       ${pl.installed ? "" : pl.bakkesmod ? `<p><button class="primary" id="install-plugin">Install plugin</button></p>` : `<p class="muted small">Install <b>BakkesMod</b> first (bakkesmod.com) and run it once, then come back here.</p>`}
       <details><summary class="small">How to start Rocket League without Easy Anti-Cheat</summary>
         <ul class="tight small"><li><b>Steam:</b> launch the game and pick "Play without Easy Anti-Cheat" in the prompt.</li>
@@ -676,7 +676,7 @@ function drawLive() {
   <div class="card"><b>Practise:</b> <span class="seg" id="focus">${MECH.map(([k, l]) => `<button data-k="${k}" class="${(pl.focus || "") === k ? "on" : ""}">${l}</button>`).join("")}</span> ${landing}
     <div class="muted small" style="margin-top:6px">Pick one to only get tips for that mechanic. Each try is scored out of 100 with one thing to fix.</div></div>
   <div class="grid4">${cards}</div>
-  <div class="card"><h3>Latest attempts</h3>${attempts || `<div class="muted">Go to Free Play and try a half flip, speed flip, wavedash or fast aerial.</div>`}</div>`;
+  <div class="card"><h3>Latest attempts</h3>${attempts || `<div class="muted">Go to Free Play and try a half flip, speed flip, wavedash, zap dash, fast aerial, flip reset, air dribble or ceiling shot.</div>`}</div>`;
 
   $("#enable-stats")?.addEventListener("click", async () => {
     const r = await api("/api/live/enable-stats", {});
