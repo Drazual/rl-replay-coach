@@ -33,6 +33,37 @@ The first time you open a replay it takes 5–20 seconds to analyse; after that 
 **Analyse all** does your whole folder in the background. Your settings and cache live in
 `%APPDATA%\rlcoach` (Windows) or `~/.rlcoach`.
 
+## Live coaching
+
+Open **🎮 Live** in the app. There are two parts, and neither touches online matches.
+
+### Watch replays together (works with Easy Anti-Cheat on)
+
+Uses Rocket League's official [Stats API](https://www.rocketleague.com/en/developer/stats-api).
+Press **Turn on** once (it sets `PacketSendRate` in `TAGame\Config\TAStatsAPI.ini` and keeps a
+backup), then restart the game. After that:
+
+- **▶ Watch in game** on any replay opens it in Rocket League's replay viewer.
+- While it plays, RL Coach shows what is coming up in the next few seconds (goals against, whiffs,
+  lost 50/50s, shots) and has ¼×, ½×, 1× and pause buttons.
+- Clicking any moment or shot jumps the in-game replay to a few seconds before it.
+
+### Mechanics trainer (Rocket League started without Easy Anti-Cheat)
+
+Rocket League lets you start the game without Easy Anti-Cheat for training, free play, offline/LAN
+matches and replays (Steam asks at launch; on Epic use Library → ⋯ → **Launch without EAC**). In
+that mode BakkesMod plugins can run, so RL Coach ships one:
+
+1. Install [BakkesMod](https://bakkesmod.com) and run it once.
+2. In RL Coach → Live, press **Install plugin**.
+3. Start Rocket League without EAC. The plugin opens RL Coach by itself.
+4. Go to Free Play. Every half flip, speed flip, wavedash, fast aerial and long landing gets a score
+   out of 100 and one tip, shown on screen in-game and in the Live page (pick one mechanic to focus on).
+
+The plugin (`plugin/RLCoachLive.cpp`) only sends data to `127.0.0.1`, and sends nothing in online
+games. Console settings: `rlcoach_enabled`, `rlcoach_overlay`, `rlcoach_autolaunch`, `rlcoach_rate`,
+`rlcoach_app_path`.
+
 ## Command line
 
 ### Install (Windows, macOS, Linux)

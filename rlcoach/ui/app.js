@@ -108,6 +108,7 @@ $("#replay-list").addEventListener("click", (e) => {
 // ------------------------------------------------------------------ open replay
 let pollTimer = null;
 async function openReplay(id) {
+  state.liveView = false;
   state.current = id; state.data = null;
   clearTimeout(pollTimer);
   renderList();
@@ -150,7 +151,7 @@ function renderReplay() {
   $("#view").innerHTML = `
     <div class="head">
       <div>
-        <div class="title-row"><h1>${esc(displayName({ ...d, label: r.label }))}</h1><button id="rename" title="Give this replay a name">✎ Rename</button><button id="reveal">Show file</button></div>
+        <div class="title-row"><h1>${esc(displayName({ ...d, label: r.label }))}</h1><button id="rename" title="Give this replay a name">✎ Rename</button><button id="reveal">Show file</button><button id="watch-in-game" title="Open this replay in Rocket League's replay viewer and follow along here">▶ Watch in game</button></div>
         <div class="muted">${esc(d.playlist)} · ${d.team_size}v${d.team_size} · ${esc(d.map)} · ${esc(fmtDate(d.date))}${d.overtime ? " · overtime" : ""} · <span class="small">${esc(d.file)}</span></div>
       </div>
     </div>
@@ -159,6 +160,7 @@ function renderReplay() {
       <div class="big"><span class="t0">${d.score[0]}</span> – <span class="t1">${d.score[1]}</span></div>
       <div class="team right">${team(1)}</div>
     </div>
+    <div id="watch-bar"></div>
     <div class="muted small">Click a player above to see their coaching, heat map and shots.</div>
     <nav class="tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${state.tab === k ? "on" : ""}">${l}</button>`).join("")}</nav>
     <section id="tab"></section>`;
@@ -171,6 +173,7 @@ function renderReplay() {
     r.label = label.trim(); renderList(); renderReplay();
   };
   $("#reveal").onclick = () => api("/api/reveal", { id: state.current });
+  $("#watch-in-game").onclick = watchInGame;
   ({ coach: renderCoach, heat: renderHeat, shots: renderShots, stats: renderStats, boost: renderBoost })[state.tab]();
 }
 
@@ -190,8 +193,8 @@ function renderCoach() {
     ${more.length ? `<details class="card"><summary>${more.length} smaller things</summary><ul class="tight">${more.map((f) => `<li><b>${esc(f.title)}</b>: ${esc(f.evidence)} ${esc(f.fix[0])}</li>`).join("")}</ul></details>` : ""}
     <div class="grid2">
       <div class="card"><h3>What went well</h3>${rep.strengths.length ? `<ul class="tight">${rep.strengths.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : `<div class="muted">No stat clearly above the rest of the lobby this game.</div>`}</div>
-      <div class="card"><h3>Moments to rewatch</h3><div class="muted small">In-game clock. Open the replay in Rocket League, scrub to the time, and watch the 5 seconds before it.</div>
-        ${rep.moments.map((m) => `<div class="moment ${m.good ? "good" : ""}"><span class="ic">${ICON[m.kind] || "•"}</span><span class="clock">${esc(m.clock)}</span><span>${esc(m.text)}</span></div>`).join("") || `<div class="muted">Nothing flagged.</div>`}
+      <div class="card"><h3>Moments to rewatch</h3><div class="muted small">In-game clock. Watching in game (▶ Watch in game)? Click a moment to jump the replay there.</div>
+        ${rep.moments.map((m) => `<div class="moment seekable ${m.good ? "good" : ""}" data-time="${m.time}" title="Click to jump the in-game replay here"><span class="ic">${ICON[m.kind] || "•"}</span><span class="clock">${esc(m.clock)}</span><span>${esc(m.text)}</span></div>`).join("") || `<div class="muted">Nothing flagged.</div>`}
       </div>
     </div>`;
 }
@@ -349,7 +352,7 @@ function renderShots() {
         </div>
         <div class="card"><h3>Shooting %</h3><div class="scroll"><table><tr><th>Player</th><th>Goals</th><th>Shots</th><th>Shot %</th><th>Saves</th><th>Assists</th></tr>${tbl}${teamTot}</table></div>
           <div class="muted small" style="margin-top:6px">Goals and shots are the official in-game counts.</div></div>
-        <div class="card"><h3>Shot list</h3>${shots.map((s) => `<div class="moment"><span class="clock">${esc(s.clock)}</span><span class="t${s.team}">${esc(playerByKey(s.player)?.name || "?")}</span><span class="muted">${s.outcome}${s.z > 300 ? " · aerial" : ""}</span></div>`).join("") || `<div class="muted">No shots.</div>`}</div>
+        <div class="card"><h3>Shot list</h3>${shots.map((s) => `<div class="moment seekable" data-time="${s.time}" title="Click to jump the in-game replay here"><span class="clock">${esc(s.clock)}</span><span class="t${s.team}">${esc(playerByKey(s.player)?.name || "?")}</span><span class="muted">${s.outcome}${s.z > 300 ? " · aerial" : ""}</span></div>`).join("") || `<div class="muted">No shots.</div>`}</div>
       </div>
     </div>`;
   $("#shot-who").querySelectorAll("button").forEach((b) => b.onclick = () => { state.shots.who = b.dataset.k; renderShots(); });
@@ -420,6 +423,7 @@ function renderBoost() {
 
 // ------------------------------------------------------------------ trends
 async function renderTrends() {
+  state.liveView = false;
   state.current = null; renderList();
   $("#empty").hidden = true; const view = $("#view"); view.hidden = false;
   view.innerHTML = `<div class="loading"><div class="spinner"></div>Loading your games…</div>`;
@@ -478,6 +482,7 @@ function renderSettings() {
   $("#set-folders").querySelectorAll("button").forEach((b) => b.onclick = async () => {
     const folders = state.folders.filter((_, i) => i !== +b.dataset.i);
     const r = await api("/api/settings", { folders }); state.folders = r.folders; renderSettings(); loadList();
+if (location.hash === "#live") renderLive();
 
 // Tell the user when a newer release is on GitHub.
 api("/api/update").then((u) => {
@@ -498,6 +503,7 @@ $("#settings").addEventListener("close", async () => {
   const name = $("#set-player").value.trim();
   if (name) { await api("/api/settings", { player: name }); }
   loadList();
+if (location.hash === "#live") renderLive();
 
 // Tell the user when a newer release is on GitHub.
 api("/api/update").then((u) => {
@@ -521,6 +527,7 @@ $("#btn-add-folder-text").onclick = async () => {
   const f = $("#set-folder-text").value.trim(); if (!f) return;
   const r = await api("/api/settings", { folders: [...state.folders, f] });
   state.folders = r.folders; $("#set-folder-text").value = ""; renderSettings(); loadList();
+if (location.hash === "#live") renderLive();
 
 // Tell the user when a newer release is on GitHub.
 api("/api/update").then((u) => {
@@ -535,6 +542,7 @@ api("/api/update").then((u) => {
 }).catch(() => {});
 };
 $("#btn-trends").onclick = renderTrends;
+$("#btn-live").onclick = renderLive;
 $("#btn-analyse-all").onclick = analyseAll;
 
 // Keep the list fresh (new replays appear after each match) and let the app know the window is open.
@@ -548,6 +556,7 @@ setInterval(async () => {
 setInterval(loadList, 30000);
 
 loadList();
+if (location.hash === "#live") renderLive();
 
 // Tell the user when a newer release is on GitHub.
 api("/api/update").then((u) => {
@@ -560,3 +569,162 @@ api("/api/update").then((u) => {
   later.onclick = () => bar.remove();
   document.body.prepend(bar);
 }).catch(() => {});
+
+// ------------------------------------------------------------------ live: shared
+const LIVE = { status: null, lastSaid: new Set(), timer: null };
+const MECH = [["", "Everything"], ["half_flip", "Half flip"], ["speed_flip", "Speed flip"], ["wavedash", "Wavedash"], ["fast_aerial", "Fast aerial"]];
+
+// replay frame <-> replay time, from the pairs the analysis saved
+function frameToTime(d, frame) {
+  const ft = d.frame_times || [];
+  if (!ft.length || frame === null || frame === undefined) return null;
+  let i = ft.findIndex(([f]) => f >= frame);
+  if (i === -1) i = ft.length - 1;
+  if (i === 0) i = 1;
+  const [f0, t0] = ft[i - 1], [f1, t1] = ft[i];
+  return t0 + (frame - f0) * (t1 - t0) / ((f1 - f0) || 1);
+}
+function timeToFrame(d, time) {
+  const ft = d.frame_times || [];
+  if (ft.length < 2) return null;
+  let i = ft.findIndex(([, t]) => t >= time);
+  if (i === -1) i = ft.length - 1;
+  if (i === 0) i = 1;
+  const [f0, t0] = ft[i - 1], [f1, t1] = ft[i];
+  return Math.max(0, Math.round(f0 + (time - t0) * (f1 - f0) / ((t1 - t0) || 1)));
+}
+
+async function seekTo(time) {
+  const d = state.data; if (!d) return;
+  const lead = 4;  // start a few seconds early so you see the build-up
+  const frame = timeToFrame(d, time - lead);
+  const r = await api("/api/live/seek", frame !== null ? { frame } : { time: Math.max(0, time - lead) });
+  if (!r.ok) toast("Open this replay in Rocket League first (▶ Watch in game), with the Stats API turned on in Live.", 4000);
+}
+$("#view").addEventListener("click", (e) => {
+  const el = e.target.closest(".seekable");
+  if (el && state.data && LIVE.status?.stats?.connected) seekTo(+el.dataset.time);
+});
+
+async function watchInGame() {
+  const r = await api("/api/live/load-replay", { id: state.current });
+  toast(r.ok ? "Opening the replay in Rocket League…" : "Rocket League isn't connected. Open the Live page to turn on the Stats API, then restart the game.", 4500);
+}
+
+async function pollLive() {
+  clearTimeout(LIVE.timer);
+  try { LIVE.status = await api("/api/live"); } catch { LIVE.status = null; }
+  if (LIVE.status) {
+    if (state.liveView) drawLive();
+    else if (state.data) drawWatchBar();
+  }
+  LIVE.timer = setTimeout(pollLive, state.liveView ? 700 : 1000);
+}
+pollLive();
+
+// Follow-along bar shown on a replay while you watch the same replay in game.
+function drawWatchBar() {
+  const bar = $("#watch-bar"); if (!bar) return;
+  const st = LIVE.status.stats, d = state.data;
+  if (!st.connected || !st.in_replay || st.replay_id !== state.current) { bar.innerHTML = ""; return; }
+  const now = frameToTime(d, st.frame) ?? st.elapsed;
+  const rep = d.reports[state.player] || { moments: [] };
+  const upcoming = rep.moments.filter((m) => m.time - now > -1 && m.time - now < 10);
+  const shots = d.shots.filter((s) => s.time - now > -1 && s.time - now < 6);
+  const say = [...upcoming.map((m) => ({ id: "m" + m.time, at: m.time, text: m.text })),
+               ...shots.map((s) => ({ id: "s" + s.time, at: s.time, text: `${playerByKey(s.player)?.name} shoots: ${s.outcome}` }))];
+  // Push the next callout to the in-game overlay (if the plugin is loaded) a few seconds ahead.
+  for (const c of say) {
+    if (c.at - now < 4 && c.at - now > 0 && !LIVE.lastSaid.has(c.id)) {
+      LIVE.lastSaid.add(c.id);
+      api("/api/live/say", { text: `In ${Math.ceil(c.at - now)}s: ${c.text}` });
+    }
+  }
+  bar.innerHTML = `<div class="card watch"><b>🎬 Watching in game</b> · replay at ${esc(st.clock !== null && st.clock !== undefined ? fmtLen(st.clock) : "")}
+    <span class="seg" style="display:inline-flex;margin-left:10px">
+      <button data-speed="0.25">¼×</button><button data-speed="0.5">½×</button><button data-speed="1">1×</button><button data-pause="1">⏸</button><button data-pause="0">▶</button>
+    </span>
+    ${upcoming.length ? upcoming.map((m) => `<div class="moment ${m.good ? "good" : ""}"><span class="clock">in ${Math.max(0, Math.round(m.time - now))}s</span><span>${esc(m.text)}</span></div>`).join("")
+      : `<div class="muted small">Nothing flagged in the next 10 seconds. Click any moment or shot below to jump the replay there.</div>`}</div>`;
+  bar.querySelectorAll("[data-speed]").forEach((b) => b.onclick = () => api("/api/live/speed", { speed: +b.dataset.speed }));
+  bar.querySelectorAll("[data-pause]").forEach((b) => b.onclick = () => api("/api/live/pause", { paused: b.dataset.pause === "1" }));
+}
+
+// ------------------------------------------------------------------ live page
+function renderLive() {
+  state.current = null; state.data = null; state.liveView = true; renderList();
+  $("#empty").hidden = true; $("#view").hidden = false;
+  $("#view").innerHTML = `<h1 style="margin:0 0 4px">Live coaching</h1>
+    <div class="muted">Two ways to get coached while you play. Neither touches online matches.</div>
+    <div id="live-body"><div class="loading"><div class="spinner"></div>Checking Rocket League…</div></div>`;
+  drawLive();
+}
+
+function sparkline(scores) {
+  if (!scores.length) return "";
+  const W = 160, H = 34, n = scores.length;
+  const pts = scores.map((v, i) => `${(n === 1 ? W / 2 : i * W / (n - 1)).toFixed(1)},${(H - 2 - v / 100 * (H - 4)).toFixed(1)}`).join(" ");
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><polyline points="${pts}" fill="none" stroke="#4f9dff" stroke-width="2"/></svg>`;
+}
+
+function drawLive() {
+  const body = $("#live-body"); if (!body || !LIVE.status) return;
+  if (document.activeElement && body.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+  const { stats: st, plugin: pl } = LIVE.status;
+  const enabled = st.settings && st.settings.PacketSendRate > 0;
+  const statsState = st.connected ? (st.in_replay ? "🟢 Connected · watching a replay" : "🟢 Connected") : enabled ? "🟡 Turned on · start (or restart) Rocket League" : "⚪ Off";
+  const replayName = st.replay_id ? displayName(state.replays.find((r) => r.id === st.replay_id) || {}) : null;
+
+  const plState = pl.connected ? `🟢 Connected · ${esc(pl.mode || "")}` : pl.installed ? "🟡 Installed · start Rocket League without Easy Anti-Cheat" : !pl.bakkesmod ? "⚪ BakkesMod not found" : "⚪ Plugin not installed";
+  const sum = pl.summary || {};
+  const cards = MECH.slice(1).map(([k, l]) => {
+    const s = sum[k];
+    return `<div class="card mech ${pl.focus === k ? "focus" : ""}"><h3>${l}</h3>
+      ${s ? `<div class="big-num">${s.avg}<span class="muted small"> avg · best ${s.best} · ${s.count} tries</span></div>${sparkline(s.recent)}` : `<div class="muted small">No attempts yet.</div>`}</div>`;
+  }).join("");
+  const landing = sum.landing ? `<span class="chip">Clean landings: ${sum.landing.avg}%</span>` : "";
+  const attempts = (pl.attempts || []).slice(0, 25).map((a) => `
+    <div class="moment"><span class="grade g${a.grade}">${a.grade}</span><span style="min-width:96px"><b>${esc(a.label)}</b><br><span class="muted small">${a.score}/100</span></span>
+      <span>${esc(a.tip)}<br><span class="muted small">${Object.entries(a.details || {}).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}</span></span></div>`).join("");
+
+  $("#live-body").innerHTML = `
+  <div class="grid2" style="margin-top:14px">
+    <div class="card">
+      <h3>🎬 Watch replays together</h3>
+      <div><b>${statsState}</b></div>
+      <p class="muted small">Uses Rocket League's official Stats API, so it works with Easy Anti-Cheat on or off. Open any replay here and press <b>▶ Watch in game</b>.
+        RL Coach follows along, calls out what's coming up, and jumps the in-game replay to any moment or shot you click.</p>
+      ${!st.install ? `<div class="row"><input id="rl-path" placeholder="Rocket League folder (the one containing TAGame)"><button id="rl-path-save">Save</button></div>` : `<div class="muted small">Game folder: ${esc(st.install)}</div>`}
+      ${st.install && !enabled ? `<p><button class="primary" id="enable-stats">Turn on</button> <span class="muted small">Changes one setting in the game's config file (a backup is kept). Restart Rocket League afterwards.</span></p>` : ""}
+      ${st.in_replay ? `<p>${replayName ? `Watching <b>${esc(replayName)}</b>. <button id="open-watching">Open it here</button>` : `<span class="muted">Watching a replay that isn't in your replay folders.</span>`}</p>` : ""}
+    </div>
+    <div class="card">
+      <h3>🎮 Mechanics trainer</h3>
+      <div><b>${plState}</b></div>
+      <p class="muted small">A small BakkesMod plugin that only runs when Rocket League is started <b>without Easy Anti-Cheat</b>, and never sends anything in online games.
+        It opens RL Coach automatically, grades every half flip, speed flip, wavedash, fast aerial and landing in free play or training, and shows a tip on screen.</p>
+      ${pl.installed ? "" : pl.bakkesmod ? `<p><button class="primary" id="install-plugin">Install plugin</button></p>` : `<p class="muted small">Install <b>BakkesMod</b> first (bakkesmod.com) and run it once, then come back here.</p>`}
+      <details><summary class="small">How to start Rocket League without Easy Anti-Cheat</summary>
+        <ul class="tight small"><li><b>Steam:</b> launch the game and pick "Play without Easy Anti-Cheat" in the prompt.</li>
+        <li><b>Epic:</b> Library → ⋯ next to Rocket League → "Launch without EAC". You can't play online in this mode; restart normally for ranked.</li>
+        <li>Start BakkesMod before the game, then go to Free Play.</li></ul></details>
+    </div>
+  </div>
+  <h2>Mechanics</h2>
+  <div class="card"><b>Practise:</b> <span class="seg" id="focus">${MECH.map(([k, l]) => `<button data-k="${k}" class="${(pl.focus || "") === k ? "on" : ""}">${l}</button>`).join("")}</span> ${landing}
+    <div class="muted small" style="margin-top:6px">Pick one to only get tips for that mechanic. Each try is scored out of 100 with one thing to fix.</div></div>
+  <div class="grid4">${cards}</div>
+  <div class="card"><h3>Latest attempts</h3>${attempts || `<div class="muted">Go to Free Play and try a half flip, speed flip, wavedash or fast aerial.</div>`}</div>`;
+
+  $("#enable-stats")?.addEventListener("click", async () => {
+    const r = await api("/api/live/enable-stats", {});
+    toast(r.ok ? "Stats API turned on. Restart Rocket League to use it." : r.error, 5000);
+  });
+  $("#rl-path-save")?.addEventListener("click", async () => { await api("/api/settings/rl-install", { path: $("#rl-path").value }); pollLive(); });
+  $("#install-plugin")?.addEventListener("click", async () => {
+    const r = await api("/api/live/install-plugin", {});
+    toast(r.ok ? "Plugin installed. Start Rocket League without Easy Anti-Cheat to use it." : r.error, 5000);
+  });
+  $("#open-watching")?.addEventListener("click", () => openReplay(st.replay_id));
+  $("#focus").querySelectorAll("button").forEach((b) => b.onclick = async () => { await api("/api/live/focus", { kind: b.dataset.k }); pollLive(); });
+}

@@ -6,16 +6,38 @@ name: Build and release Windows app
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  plugin:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Get the BakkesMod SDK
+        run: git clone --depth 1 https://github.com/bakkesmodorg/BakkesModSDK sdk
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build RLCoachLive.dll
+        run: cl /nologo /LD /EHsc /std:c++17 /O2 /MD /DNDEBUG /utf-8 /I sdk\include plugin\RLCoachLive.cpp /link sdk\lib\pluginsdk.lib ws2_32.lib shell32.lib /OUT:RLCoachLive.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RLCoachLive-plugin
+          path: RLCoachLive.dll
+
+  build:
+    needs: plugin
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: RLCoachLive-plugin
+          path: rlcoach/plugin
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -35,7 +57,7 @@ jobs:
       - name: Unit tests
         run: python -m pytest -q tests
       - name: Build RLCoach.exe
-        run: pyinstaller --noconfirm --onefile --windowed --name RLCoach --add-data "rlcoach\ui;rlcoach\ui" --collect-all subtr_actor rlcoach_app.py
+        run: pyinstaller --noconfirm --onefile --windowed --name RLCoach --add-data "rlcoach\ui;rlcoach\ui" --add-data "rlcoach\plugin;rlcoach\plugin" --collect-all subtr_actor rlcoach_app.py
       - name: Smoke test
         shell: pwsh
         run: |
@@ -49,8 +71,8 @@ jobs:
           name: RLCoach-windows
           path: dist/RLCoach.exe
       - name: Publish release
-        if: steps.ver.outputs.is_new == '1'
+        if: steps.ver.outputs.is_new == '1' && github.event_name == 'push'
         shell: pwsh
-        run: gh release create "v${{ steps.ver.outputs.version }}" dist/RLCoach.exe --title "RL Coach v${{ steps.ver.outputs.version }}" --generate-notes
+        run: gh release create "v${{ steps.ver.outputs.version }}" dist/RLCoach.exe rlcoach/plugin/RLCoachLive.dll --title "RL Coach v${{ steps.ver.outputs.version }}" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

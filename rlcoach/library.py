@@ -131,6 +131,24 @@ class Library:
         names = Counter(e.get("recorder") for e in self.index.values() if e.get("recorder"))
         return names.most_common(1)[0][0] if names else None
 
+    def match_replay(self, file_name: str | None, players: list[str]) -> str | None:
+        """Which library replay the game is showing, by file name or else by who is in it."""
+        if not self.paths:
+            self.scan()
+        if file_name:
+            stem = Path(file_name).stem.lower()
+            for rid, path in self.paths.items():
+                if path.stem.lower() == stem:
+                    return rid
+        names = {n.lower() for n in players if n}
+        if names:
+            best = [(rid, e) for rid, e in self.index.items()
+                    if rid in self.paths and names <= {(p.get("name") or "").lower() for p in e.get("players", [])}]
+            if best:
+                best.sort(key=lambda x: x[1].get("date", ""), reverse=True)
+                return best[0][0]
+        return None
+
     # ---------------------------------------------------------------- analysis
     def cache_path(self, rid: str, stamp: str | None = None) -> Path:
         from .analysis import ANALYSIS_VERSION

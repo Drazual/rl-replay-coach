@@ -13,7 +13,7 @@ from .metrics import METRICS, lobby_metrics
 from .names import map_name, playlist_name
 from .parse import pid_key
 
-ANALYSIS_VERSION = 1  # bump when the payload shape changes so caches are rebuilt
+ANALYSIS_VERSION = 2  # bump when the payload shape changes so caches are rebuilt
 HEATMAP_FPS = 10
 
 
@@ -86,6 +86,16 @@ def _shots(replay: parse.Replay) -> list[dict]:
     return shots
 
 
+def _frame_times(replay: parse.Replay) -> list[list[float]]:
+    """(replay frame, replay time) pairs, so the app can follow along with the in-game replay viewer."""
+    pairs = {}
+    for module in ("touch", "whiff", "beaten_to_ball"):
+        for e in replay.events(module):
+            if e.get("frame") is not None and e.get("time") is not None:
+                pairs[int(e["frame"])] = round(float(e["time"]), 3)
+    return [[f, t] for f, t in sorted(pairs.items())]
+
+
 def analyse(path: str, you: str | None = None) -> dict:
     replay = parse.load(path)
     you_player = replay.find_player(you)
@@ -139,5 +149,6 @@ def analyse(path: str, you: str | None = None) -> dict:
         "reports": reports,
         "tracks": tracks,
         "shots": _shots(replay),
+        "frame_times": _frame_times(replay),
         "goals": goals,
     }

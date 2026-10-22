@@ -20,7 +20,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .library import Library
+from . import statsapi
+from .library import Library, data_dir
+from .live.server import LiveServer
 
 UI_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent.parent)) / "rlcoach" / "ui"
 if not UI_DIR.is_dir():
@@ -30,6 +32,10 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
 
 LIB: Library | None = None
 WINDOW = None  # the pywebview window, when there is one
+STATS: statsapi.StatsClient | None = None
+LIVE: LiveServer | None = None
+DEFAULT_PORT = 49209  # fixed so the BakkesMod plugin can tell the app is already open
+PLUGIN_DLL = UI_DIR.parent / "plugin" / "RLCoachLive.dll"
 LAST_PING: float | None = None  # when the UI last checked in; used to quit after the window closes
 
 
@@ -89,6 +95,10 @@ class Handler(BaseHTTPRequestHandler):
             from .update import check
 
             return self._json(check())
+        if url.path == "/api/live":
+            return self._json(live_status(lib))
+        if url.path == "/api/live/history":
+            return self._json({"attempts": LIVE.history()})
         if url.path == "/api/status":
             global LAST_PING
             LAST_PING = time.time()
@@ -132,6 +142,38 @@ class Handler(BaseHTTPRequestHandler):
             if link.startswith("https://github.com/"):
                 webbrowser.open(link)
             return self._json({"ok": True})
+        if url.path == "/api/live/enable-stats":
+            install = statsapi.find_install(lib.settings.get("rl_install"))
+            if install is None:
+                return self._json({"ok": False, "error": "Could not find Rocket League. Set its folder in Settings."})
+            try:
+                cfg = statsapi.enable(install)
+            except OSError as e:
+                return self._json({"ok": False, "error": f"Could not write the settings file: {e}"})
+            return self._json({"ok": True, "settings": cfg})
+        if url.path == "/api/live/seek":
+            data = {"Frame": int(body["frame"])} if body.get("frame") is not None else {"TimeSeconds": float(body.get("time", 0))}
+            return self._json({"ok": STATS.send("SeekReplay", data)})
+        if url.path == "/api/live/load-replay":
+            p = lib.paths.get(body.get("id"))
+            return self._json({"ok": bool(p) and STATS.send("LoadReplay", {"Path": str(p)})})
+        if url.path == "/api/live/speed":
+            return self._json({"ok": STATS.send("SetGameSpeed", {"Speed": float(body.get("speed", 1))})})
+        if url.path == "/api/live/pause":
+            return self._json({"ok": STATS.send("SetMatchPaused", {"bPaused": bool(body.get("paused"))})})
+        if url.path == "/api/live/focus":
+            LIVE.focus = body.get("kind") or None
+            LIVE.tip(f"Now practising: {LIVE.focus.replace('_', ' ') if LIVE.focus else 'everything'}.")
+            return self._json({"ok": True})
+        if url.path == "/api/live/say":
+            LIVE.tip(str(body.get("text", ""))[:200], 4.0)
+            return self._json({"ok": True})
+        if url.path == "/api/live/install-plugin":
+            return self._json(install_plugin())
+        if url.path == "/api/settings/rl-install":
+            lib.settings["rl_install"] = (body.get("path") or "").strip() or None
+            lib.save_settings()
+            return self._json(live_status(lib))
         if url.path == "/api/retry":
             rid = body.get("id")
             lib.status.pop(rid, None)
@@ -150,6 +192,68 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+
+def _bakkesmod_dir() -> Path:
+    return Path(os.environ.get("APPDATA", Path.home())) / "bakkesmod" / "bakkesmod"
+
+
+def install_plugin() -> dict:
+    """Copy the bundled plugin into BakkesMod and make it load automatically."""
+    bm = _bakkesmod_dir()
+    if not bm.is_dir():
+        return {"ok": False, "error": "BakkesMod is not installed. Get it from bakkesmod.com, run it once, then try again."}
+    if not PLUGIN_DLL.is_file():
+        return {"ok": False, "error": "This build of RL Coach does not include the plugin. Download RLCoach.exe from GitHub Releases."}
+    (bm / "plugins").mkdir(exist_ok=True)
+    shutil.copy2(PLUGIN_DLL, bm / "plugins" / "RLCoachLive.dll")
+    cfg = bm / "cfg" / "plugins.cfg"
+    cfg.parent.mkdir(exist_ok=True)
+    text = cfg.read_text(encoding="utf-8", errors="ignore") if cfg.exists() else ""
+    if "plugin load rlcoachlive" not in text.lower():
+        cfg.write_text(text.rstrip("\n") + "\nplugin load rlcoachlive\n", encoding="utf-8")
+    return {"ok": True, "path": str(bm / "plugins" / "RLCoachLive.dll")}
+
+
+def plugin_installed() -> bool:
+    return (_bakkesmod_dir() / "plugins" / "RLCoachLive.dll").is_file()
+
+
+def live_status(lib: Library) -> dict:
+    install = statsapi.find_install(lib.settings.get("rl_install"))
+    stats = STATS.snapshot()
+    stats["install"] = str(install) if install else None
+    stats["settings"] = statsapi.read_settings(install) if install else None
+    stats["replay_id"] = lib.match_replay(stats.get("replay_file"), stats.get("players") or []) if stats["in_replay"] else None
+    return {
+        "stats": stats,
+        "plugin": {**LIVE.snapshot(), "installed": plugin_installed(), "bakkesmod": _bakkesmod_dir().is_dir(),
+                   "bundled": PLUGIN_DLL.is_file()},
+    }
+
+
+def _save_launch_command() -> None:
+    """Remember how to start this app so the BakkesMod plugin can open it."""
+    if getattr(sys, "frozen", False):
+        cmd = f'"{sys.executable}"'
+    else:
+        exe = Path(sys.executable)
+        w = exe.with_name("pythonw.exe")
+        cmd = f'"{w if w.exists() else exe}" -m rlcoach.app'
+    try:
+        (data_dir() / "launch.txt").write_text(cmd, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _already_running(port: int) -> bool:
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=2) as r:
+            return r.status == 200
+    except Exception:
+        return False
 
 
 def _app_mode_browser(url: str) -> bool:
@@ -175,14 +279,25 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(prog="rlcoach-app", description="Rocket League replay coach")
-    ap.add_argument("--port", type=int, default=0)
+    ap.add_argument("--port", type=int, default=DEFAULT_PORT)
+    ap.add_argument("--live", action="store_true", help="open on the Live tab (used by the BakkesMod plugin)")
     ap.add_argument("--browser", action="store_true", help="open in your browser instead of an app window")
     ap.add_argument("--no-window", action="store_true", help="only run the server (for testing)")
     args = ap.parse_args(argv)
 
+    global STATS, LIVE
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    except OSError:
+        if _already_running(args.port):  # the app is already open: just show it
+            webbrowser.open(f"http://127.0.0.1:{args.port}/" + ("#live" if args.live else ""))
+            return 0
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     LIB = Library()
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    STATS = statsapi.StatsClient()
+    LIVE = LiveServer(data_dir())
+    _save_launch_command()
+    url = f"http://127.0.0.1:{server.server_address[1]}/" + ("#live" if args.live else "")
     print(f"RL Coach running at {url}", flush=True)
 
     if args.no_window:
