@@ -7,3 +7,5 @@ dist/
 .pytest_cache/
 *.spec
 rlcoach-report.html
+rlcoach/plugin/*.dll
+sdk/
