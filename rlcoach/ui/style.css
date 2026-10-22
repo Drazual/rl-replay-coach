@@ -95,3 +95,5 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 .big-num{font-size:26px;font-weight:800}
 .grade{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;font-weight:800;background:var(--panel2)}
 .grade.gS,.grade.gA{color:var(--good)}.grade.gB{color:var(--accent)}.grade.gC{color:var(--warn)}.grade.gD{color:var(--bad)}
+.small-spin{width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px;margin-right:6px}
+.check{flex-direction:row!important;align-items:center;gap:8px!important}
