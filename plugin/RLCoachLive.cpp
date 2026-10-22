@@ -1,6 +1,6 @@
 // RL Coach Live: a BakkesMod plugin that streams your car and controller inputs
 // to the RL Coach app so it can grade mechanics (half flips, speed flips,
-// wavedashes, fast aerials, landings) and shows the app's tips on screen.
+// wavedashes, zap dashes, fast aerials, flip resets, air dribbles, ceiling shots, landings) and shows the app's tips on screen.
 //
 // BakkesMod only runs when Rocket League is started WITHOUT Easy Anti-Cheat,
 // which the game allows for training, free play, offline/LAN matches and
@@ -83,6 +83,7 @@ private:
     std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
     std::chrono::steady_clock::time_point last_send_{};
     std::string last_mode_;
+    unsigned int touches_ = 0;  // ball hits by the local car, sent so the app can see touches between frames
 
     std::mutex tip_mutex_;
     std::string tip_;
@@ -117,6 +118,12 @@ void RLCoachLive::onLoad() {
     gameWrapper->HookEventWithCaller<CarWrapper>(
         "Function TAGame.Car_TA.SetVehicleInput",
         [this](CarWrapper car, void*, std::string) { OnVehicleInput(car); });
+    gameWrapper->HookEventWithCaller<CarWrapper>(
+        "Function TAGame.Car_TA.OnHitBall",
+        [this](CarWrapper car, void*, std::string) {
+            CarWrapper local = gameWrapper->GetLocalCar();
+            if (!local.IsNull() && !car.IsNull() && car.memory_address == local.memory_address) ++touches_;
+        });
     gameWrapper->RegisterDrawable([this](CanvasWrapper canvas) { Draw(canvas); });
 
     gameWrapper->SetTimeout([this](GameWrapper*) { LaunchAppIfNeeded(); }, 2.0f);
@@ -167,6 +174,9 @@ void RLCoachLive::OnVehicleInput(CarWrapper car) {
     BoostWrapper bc = car.GetBoostComponent();
     if (!bc.IsNull()) boost = bc.GetCurrentBoostAmount() * 100.0f;
     double t = std::chrono::duration<double>(now - start_).count();
+    int team = 0;
+    PriWrapper pri = car.GetPRI();
+    if (!pri.IsNull()) team = pri.GetTeamNum();
 
     std::string ball = "null";
     ServerWrapper server = gameWrapper->GetCurrentGameState();
@@ -180,11 +190,12 @@ void RLCoachLive::OnVehicleInput(CarWrapper car) {
         }
     }
 
-    char msg[900];
+    char msg[1100];
     snprintf(msg, sizeof(msg),
              "{\"type\":\"frame\",\"mode\":\"%s\",\"t\":%.4f,"
              "\"car\":{\"loc\":[%.1f,%.1f,%.1f],\"vel\":[%.1f,%.1f,%.1f],\"angvel\":[%.3f,%.3f,%.3f],"
-             "\"rot\":[%.5f,%.5f,%.5f],\"boost\":%.0f,\"ground\":%s,\"wall\":%s,\"jumped\":%s,\"djumped\":%s,\"dodging\":%s},"
+             "\"rot\":[%.5f,%.5f,%.5f],\"boost\":%.0f,\"ground\":%s,\"wall\":%s,\"jumped\":%s,\"djumped\":%s,\"dodging\":%s,"
+             "\"hasflip\":%s,\"wheels\":%d,\"team\":%d,\"touches\":%u},"
              "\"in\":{\"thr\":%.2f,\"steer\":%.2f,\"pitch\":%.2f,\"yaw\":%.2f,\"roll\":%.2f,\"jump\":%d,\"boost\":%d,\"hb\":%d},"
              "\"ball\":%s}",
              mode.c_str(), t, loc.X, loc.Y, loc.Z, vel.X, vel.Y, vel.Z, ang.X, ang.Y, ang.Z,
@@ -192,6 +203,7 @@ void RLCoachLive::OnVehicleInput(CarWrapper car) {
              car.IsOnGround() ? "true" : "false", car.IsOnWall() ? "true" : "false",
              car.GetbJumped() ? "true" : "false", car.GetbDoubleJumped() ? "true" : "false",
              car.IsDodging() ? "true" : "false",
+             car.HasFlip() ? "true" : "false", car.GetNumWheelContacts(), team, touches_,
              in.Throttle, in.Steer, in.Pitch, in.Yaw, in.Roll, in.Jump ? 1 : 0, in.HoldingBoost ? 1 : 0,
              in.Handbrake ? 1 : 0, ball.c_str());
     Send(msg);

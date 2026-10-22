@@ -67,7 +67,7 @@ that mode BakkesMod plugins can run, so RL Coach ships one:
 1. Install [BakkesMod](https://bakkesmod.com) and run it once.
 2. In RL Coach → Live, press **Install plugin**.
 3. Start Rocket League without EAC. The plugin opens RL Coach by itself.
-4. Go to Free Play. Every half flip, speed flip, wavedash, fast aerial and long landing gets a score
+4. Go to Free Play. Every half flip, speed flip, wavedash, zap dash, fast aerial, flip reset, air dribble, ceiling shot and long landing gets a score
    out of 100 and one tip, shown on screen in-game and in the Live page (pick one mechanic to focus on).
 
 The plugin (`plugin/RLCoachLive.cpp`) only sends data to `127.0.0.1`, and sends nothing in online
