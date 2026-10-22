@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RL Coach</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">◆</span> RL Coach</div>
+  <div class="top-actions">
+    <button id="btn-trends" class="ghost">📈 My trends</button>
+    <button id="btn-analyse-all" class="ghost" title="Analyse every replay in the background so trends cover them">▶ Analyse all</button>
+    <button id="btn-settings" class="ghost">⚙ Settings</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="side-tools">
+      <input id="search" type="search" placeholder="Search replays, maps, players…">
+      <div class="filters">
+        <select id="filter-mode">
+          <option value="">All modes</option>
+        </select>
+        <select id="filter-result">
+          <option value="">All results</option>
+          <option value="win">Wins</option>
+          <option value="loss">Losses</option>
+        </select>
+      </div>
+      <div id="list-count" class="muted small"></div>
+    </div>
+    <ul id="replay-list" class="replay-list"></ul>
+  </aside>
+
+  <main id="main">
+    <div id="empty" class="empty">
+      <h2>Welcome to RL Coach</h2>
+      <p>Pick a replay on the left to see heat maps, shots and coaching.</p>
+      <p class="muted">Replays come from your Rocket League <code>Demos</code> folder. Save one after any match from the scoreboard
+        (ranked, casual, private, or offline against bots).</p>
+      <button id="btn-add-folder-empty">Choose a replay folder</button>
+    </div>
+    <div id="view" hidden></div>
+  </main>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" class="dialog">
+    <h3>Settings</h3>
+    <label>Your in-game name
+      <input id="set-player" placeholder="Leave empty to use whoever saved the most replays">
+    </label>
+    <div class="muted small">Used to find "you" in each replay. Currently: <b id="set-you"></b></div>
+    <h4>Replay folders</h4>
+    <ul id="set-folders" class="folders"></ul>
+    <div class="row">
+      <button type="button" id="btn-add-folder">Add folder…</button>
+      <input id="set-folder-text" placeholder="…or paste a folder path">
+      <button type="button" id="btn-add-folder-text">Add</button>
+    </div>
+    <div class="row end"><button value="close" class="primary">Done</button></div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

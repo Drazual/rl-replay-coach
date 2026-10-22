@@ -1,0 +1,9 @@
+__pycache__/
+*.egg-info/
+build/
+dist/
+.venv/
+.build-venv/
+.pytest_cache/
+*.spec
+rlcoach-report.html

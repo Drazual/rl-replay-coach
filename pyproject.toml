@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rlcoach"
+version = "0.2.0"
+description = "Coaching feedback from Rocket League replay files. Reads .replay files only; nothing touches the game."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["subtr-actor-py>=1.5.1", "numpy"]
+
+[project.optional-dependencies]
+app = ["pywebview>=5"]
+test = ["pytest"]
+
+[project.scripts]
+rlcoach = "rlcoach.cli:main"
+
+[project.gui-scripts]
+rlcoach-app = "rlcoach.app:main"
+
+[tool.setuptools]
+packages = ["rlcoach"]
+
+[tool.setuptools.package-data]
+rlcoach = ["ui/*"]
