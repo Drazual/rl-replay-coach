@@ -10,7 +10,7 @@ const api = async (path, body) => {
 
 const state = {
   replays: [], you: null, folders: [],
-  current: null, data: null, tab: "coach", player: null,
+  current: null, data: null, tab: "review", player: null,
   heat: { subject: "player", half: "all" }, shots: { who: "all" },
   trendMetric: "avg_boost",
 };
@@ -147,7 +147,7 @@ function renderReplay() {
       <b class="t${p.team}">${esc(p.name)}${p.is_bot ? " 🤖" : ""}${p.key === d.you ? " (you)" : ""}</b>
       <span class="st">${p.score} pts · ${m.goals ?? 0}G ${m.shots ?? 0}Sh ${m.saves ?? 0}Sv ${m.assists ?? 0}A</span></div>`;
   }).join("");
-  const tabs = [["coach", "Coach"], ["heat", "Heat maps"], ["shots", "Shots"], ["stats", "Stats"], ["boost", "Boost"]];
+  const tabs = [["review", "Review"], ["coach", "Coach"], ["heat", "Heat maps"], ["shots", "Shots"], ["stats", "Stats"], ["boost", "Boost"]];
   $("#view").innerHTML = `
     <div class="head">
       <div>
@@ -174,7 +174,89 @@ function renderReplay() {
   };
   $("#reveal").onclick = () => api("/api/reveal", { id: state.current });
   $("#watch-in-game").onclick = watchInGame;
-  ({ coach: renderCoach, heat: renderHeat, shots: renderShots, stats: renderStats, boost: renderBoost })[state.tab]();
+  ({ review: renderReview, coach: renderCoach, heat: renderHeat, shots: renderShots, stats: renderStats, boost: renderBoost })[state.tab]();
+}
+
+// ------------------------------------------------------------------ review tab
+// Top-down field for one moment, your goal at the bottom. Arrows show where each car was heading.
+function momentSvg(snap, team) {
+  if (!snap || !snap.ball) return "";
+  const f = team === 0 ? 1 : -1;
+  const X = (x) => x * f, Y = (y) => -y * f;
+  const { x: W, y: H, goalW: GW, goalD: GD, corner: C } = FIELD;
+  const outline = `M ${-W + C} ${-H} L ${W - C} ${-H} L ${W} ${-H + C} L ${W} ${H - C} L ${W - C} ${H} L ${-W + C} ${H} L ${-W} ${H - C} L ${-W} ${-H + C} Z`;
+  const arrow = (x, y, vx, vy, color, k = 0.55) => {
+    const sp = Math.hypot(vx, vy); if (sp < 250) return "";
+    return `<line x1="${X(x)}" y1="${Y(y)}" x2="${X(x + vx * k)}" y2="${Y(y + vy * k)}" stroke="${color}" stroke-width="90" stroke-linecap="round" opacity=".8" marker-end="url(#ah)"/>`;
+  };
+  const cars = snap.players.filter((p) => p.alive).map((p) => {
+    const c = TEAM_COLOR[p.team];
+    return arrow(p.x, p.y, p.vx, p.vy, c) +
+      `<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="${p.you ? 330 : 260}" fill="${c}" stroke="${p.you ? "#fff" : "#0008"}" stroke-width="${p.you ? 120 : 50}"/>` +
+      (p.you ? `<text x="${X(p.x)}" y="${Y(p.y) - 470}" text-anchor="middle">you</text>` : "");
+  }).join("");
+  const b = snap.ball;
+  const sug = snap.suggest ? (() => {
+    const me = snap.players.find((p) => p.you);
+    const line = me && me.alive ? `<line x1="${X(me.x)}" y1="${Y(me.y)}" x2="${X(snap.suggest.x)}" y2="${Y(snap.suggest.y)}" stroke="#3fb950" stroke-width="90" stroke-dasharray="200 140"/>` : "";
+    return line + `<circle cx="${X(snap.suggest.x)}" cy="${Y(snap.suggest.y)}" r="420" fill="none" stroke="#3fb950" stroke-width="110" stroke-dasharray="180 110"/>
+      <text class="sug" x="${X(snap.suggest.x)}" y="${Y(snap.suggest.y) - 560}" text-anchor="middle">${esc(snap.suggest.label)}</text>`;
+  })() : "";
+  return `<svg class="moment-svg" viewBox="${-W - 250} ${-H - GD - 150} ${2 * W + 500} ${2 * H + 2 * GD + 300}" role="img" aria-label="Positions at this moment">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3" markerHeight="3" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#cbd5e1"/></marker></defs>
+    <path d="${outline}" fill="var(--field)" stroke="var(--field-line)" stroke-width="40"/>
+    <line x1="${-W}" y1="0" x2="${W}" y2="0" stroke="var(--field-line)" stroke-width="30"/>
+    <circle cx="0" cy="0" r="900" fill="none" stroke="var(--field-line)" stroke-width="30"/>
+    <rect x="${-GW}" y="${H}" width="${2 * GW}" height="${GD}" fill="${TEAM_COLOR[team]}55" stroke="var(--field-line)" stroke-width="30"/>
+    <rect x="${-GW}" y="${-H - GD}" width="${2 * GW}" height="${GD}" fill="${TEAM_COLOR[1 - team]}55" stroke="var(--field-line)" stroke-width="30"/>
+    ${sug}${cars}
+    ${arrow(b.x, b.y, b.vx, b.vy, "#e5e7eb", 0.45)}
+    <circle cx="${X(b.x)}" cy="${Y(b.y)}" r="${200 + Math.min(200, b.z / 8)}" fill="#e5e7eb" stroke="#111" stroke-width="50"/>
+  </svg>`;
+}
+
+const VERDICT = { mistake: ["✕", "bad"], ok: ["✓", "ok"], good: ["★", "good"] };
+function renderReview() {
+  const d = state.data, p = playerByKey(state.player);
+  const rv = (d.review || {})[state.player];
+  if (!rv) {
+    $("#tab").innerHTML = `<div class="card">${d.review ? "No review for this player (bots aren't reviewed)." : "Open this replay again to build the review (it needs a fresh analysis)."}</div>`;
+    return;
+  }
+  const top = rv.habits[0];
+  const head = `<div class="card focus">
+    <h3>${esc(p.name)}: ${rv.goals_against ? `${rv.goals_on_you} of ${rv.goals_against} goals against came from your decisions` : "no goals against"}</h3>
+    ${top ? `<div>Biggest thing to change: <b>${esc(top.label)}</b> (${top.count}×${top.goals ? `, cost ${top.goals} goal${top.goals > 1 ? "s" : ""}` : ""}).${top.should ? ` ${esc(top.should)}` : ""}</div>` : `<div>No decision mistakes stood out this game.</div>`}
+    ${rv.habits.length > 1 ? `<div style="margin-top:6px">${rv.habits.slice(1).map((h) => `<span class="chip">${esc(h.label)} ${h.count}×${h.goals ? ` · ${h.goals} goal${h.goals > 1 ? "s" : ""}` : ""}</span>`).join("")}</div>` : ""}
+    <div class="muted small" style="margin-top:6px">Every goal against is traced back to where the attack started; the biggest mistake on your team is the root cause. Click a clock to jump the in-game replay there.</div></div>`;
+  const cards = rv.decisions.map((x) => {
+    const [ic, cls] = VERDICT[x.verdict] || ["•", ""];
+    const chain = x.steps && x.steps.length > 1 ? `<details><summary class="small">Everything you did in this attack (${x.steps.length})</summary>
+      ${x.steps.map((s) => `<div class="moment seekable" data-time="${s.time}"><span class="clock">${esc(s.clock)}</span><span>${esc(s.happened)}${s.should ? `<br><span class="muted small">${esc(s.should)}</span>` : ""}</span></div>`).join("")}</details>` : "";
+    return `<div class="card decision ${cls}">
+      <div class="dec-grid">
+        <div>${momentSvg(x.snapshot, p.team)}<div class="muted small" style="text-align:center">Your goal at the bottom</div></div>
+        <div>
+          <div class="dec-head"><span class="verdict ${cls}">${ic}</span><b>${esc(x.title)}</b>
+            <span class="clock seekable" data-time="${x.time}" title="Jump the in-game replay here">${esc(x.clock)}</span><span class="chip">${esc(x.context)}</span></div>
+          <p>${esc(x.happened)}</p>
+          ${x.should ? `<p class="should"><b>${x.verdict === "mistake" ? "What to do instead" : "Next time"}:</b> ${esc(x.should)}</p>` : ""}
+          ${x.why ? `<p class="muted small">${esc(x.why)}</p>` : ""}
+          ${chain}
+        </div>
+      </div></div>`;
+  }).join("");
+  const filters = `<div class="seg" id="rv-filter" style="margin-bottom:10px">${[["all", "Everything"], ["mistake", "Mistakes"], ["goals", "Goals against"], ["good", "Good plays"]].map(([k, l]) => `<button data-k="${k}" class="${(state.rvFilter || "all") === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  $("#tab").innerHTML = head + filters + `<div id="rv-cards">${cards || `<div class="card">Nothing to review for this player.</div>`}</div>`;
+  const apply = () => {
+    const k = state.rvFilter || "all";
+    $("#rv-cards").querySelectorAll(".decision").forEach((el, i) => {
+      const x = rv.decisions[i];
+      el.hidden = !(k === "all" || (k === "mistake" && x.verdict === "mistake") || (k === "good" && x.verdict === "good") || (k === "goals" && x.context.startsWith("Goal against")));
+    });
+  };
+  $("#rv-filter").querySelectorAll("button").forEach((b) => b.onclick = () => { state.rvFilter = b.dataset.k; renderReview(); });
+  apply();
 }
 
 // ------------------------------------------------------------------ coach tab
@@ -440,6 +522,21 @@ async function renderTrends() {
   const counts = {}, titles = {};
   games.forEach((g) => g.findings.forEach((k) => { counts[k] = (counts[k] || 0) + 1; titles[k] = g.finding_titles[k]; }));
   const recurring = Object.entries(counts).filter(([k]) => !k.startsWith("gap_")).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const hab = {};
+  let ga = 0, onYou = 0, reviewed = 0;
+  games.forEach((g) => {
+    if (g.goals_against === null || g.goals_against === undefined) return;
+    reviewed++; ga += g.goals_against; onYou += g.goals_on_you || 0;
+    (g.habits || []).forEach((h) => {
+      const x = hab[h.kind] = hab[h.kind] || { label: h.label, count: 0, goals: 0, games: 0, should: h.should };
+      x.count += h.count; x.goals += h.goals; x.games++;
+    });
+  });
+  const habits = Object.values(hab).sort((a, b) => b.goals - a.goals || b.count - a.count).slice(0, 6);
+  const habitCard = reviewed ? `<div class="card"><h3>Your decision habits</h3>
+      <div class="muted small">From the play-by-play review of ${reviewed} games: ${onYou} of ${ga} goals against came from your decisions.</div>
+      ${habits.length ? habits.map((h, i) => `<div class="habit"><span class="n">${i + 1}</span><span>${esc(h.label)}${i === 0 && h.should ? `<br><span class="muted small">${esc(h.should)}</span>` : ""}</span><b>${h.count}× in ${h.games} game${h.games > 1 ? "s" : ""}${h.goals ? ` · cost ${h.goals} goal${h.goals > 1 ? "s" : ""}` : ""}</b></div>`).join("")
+        : `<div class="muted">No repeated decision mistakes.</div>`}</div>` : "";
   const defs = (await api(`/api/replay?id=${games[games.length - 1].id}`)).metric_defs || [];
   const def = defs.find((x) => x.key === state.trendMetric) || defs[0];
   const ys = games.map((g) => g.metrics[def.key] ?? 0);
@@ -456,6 +553,7 @@ async function renderTrends() {
       <div class="card"><h3>Record</h3><div style="font-size:28px;font-weight:800">${wins}W – ${games.length - wins}L</div><div class="muted">${Math.round(100 * wins / games.length)}% win rate</div></div>
       <div class="card"><h3>What keeps coming up</h3>${recurring.length ? recurring.map(([k, n]) => `<div class="bar" style="display:flex;justify-content:space-between"><span>${esc(titles[k])}</span><b>${n} / ${games.length}</b></div>`).join("") : `<div class="muted">Nothing repeats. Nice.</div>`}</div>
     </div>
+    ${habitCard}
     <div class="card"><h3>Stat over time</h3>
       <select id="trend-metric">${defs.map((x) => `<option value="${x.key}" ${x.key === def.key ? "selected" : ""}>${esc(x.group)}: ${esc(x.label)}</option>`).join("")}</select>
       <span class="muted" style="margin-left:10px">First half of your games ${fmtVal(early, def)} → recent half ${fmtVal(late, def)}
@@ -591,7 +689,9 @@ function drawWatchBar() {
   if (!st.connected || !st.in_replay || st.replay_id !== state.current) { bar.innerHTML = ""; return; }
   const now = frameToTime(d, st.frame) ?? st.elapsed;
   const rep = d.reports[state.player] || { moments: [] };
-  const upcoming = rep.moments.filter((m) => m.time - now > -1 && m.time - now < 10);
+  const rv = (d.review || {})[state.player];
+  const pool = rv ? rv.decisions.filter((x) => x.verdict !== "ok").map((x) => ({ time: x.time, good: x.verdict === "good", text: `${x.title}: ${x.should || x.happened}` })) : rep.moments;
+  const upcoming = pool.filter((m) => m.time - now > -1 && m.time - now < 10);
   const shots = d.shots.filter((s) => s.time - now > -1 && s.time - now < 6);
   const say = [...upcoming.map((m) => ({ id: "m" + m.time, at: m.time, text: m.text })),
                ...shots.map((s) => ({ id: "s" + s.time, at: s.time, text: `${playerByKey(s.player)?.name} shoots: ${s.outcome}` }))];

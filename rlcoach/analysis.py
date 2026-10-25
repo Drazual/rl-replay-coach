@@ -12,8 +12,9 @@ from .coach import coach
 from .metrics import METRICS, lobby_metrics
 from .names import map_name, playlist_name
 from .parse import pid_key
+from .review import review
 
-ANALYSIS_VERSION = 2  # bump when the payload shape changes so caches are rebuilt
+ANALYSIS_VERSION = 3  # bump when the payload shape changes so caches are rebuilt
 HEATMAP_FPS = 10
 
 
@@ -115,6 +116,10 @@ def analyse(path: str, you: str | None = None) -> dict:
             "won": r.won,
         }
     lobby = lobby_metrics(replay)
+    try:
+        decisions = review(str(path), replay)
+    except Exception as e:  # the rest of the analysis is still useful without it
+        decisions = {"_error": str(e)}
 
     goals = []
     for g in replay.modules.get("core", {}).get("goal_context", []) or []:
@@ -147,6 +152,7 @@ def analyse(path: str, you: str | None = None) -> dict:
         "metric_defs": [asdict(m) for m in METRICS],
         "metrics": {k: {mk: mv for mk, mv in m.items() if not mk.startswith("_")} for k, m in lobby.items()},
         "reports": reports,
+        "review": decisions,
         "tracks": tracks,
         "shots": _shots(replay),
         "frame_times": _frame_times(replay),
