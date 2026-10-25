@@ -249,6 +249,9 @@ class Library:
                 "metrics": data["metrics"].get(me["key"], {}),
                 "findings": [f["key"] for f in rep.get("findings", [])],
                 "finding_titles": {f["key"]: f["title"] for f in rep.get("findings", [])},
+                "habits": (data.get("review") or {}).get(me["key"], {}).get("habits", []),
+                "goals_against": (data.get("review") or {}).get(me["key"], {}).get("goals_against"),
+                "goals_on_you": (data.get("review") or {}).get(me["key"], {}).get("goals_on_you"),
             })
         rows.sort(key=lambda r: r["date"])
         total = sum(1 for r in listing if not r.get("error"))

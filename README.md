@@ -12,13 +12,21 @@ exhibition games against bots.
 A desktop window with your replay list on the left (names, mode, map, score, win/loss) and, for each
 replay:
 
+- **Review**: a play-by-play of your decisions. Every goal against is traced back to where the attack
+  started and the biggest mistake on your team is named as the root cause: a lost challenge as last back,
+  a double commit, being upfield when you were the cover, a clear into the middle, a whiff, a demo, a
+  ball-side rotation, a boost grab while last back, or the ball beating you back to your net. Each card
+  shows a top-down diagram of that moment with where you should have been, what to do instead and why.
+  If a goal wasn't on you, it says so and says what was. Open play is checked too (risky last-man
+  challenges, double commits, boost grabs, open-net misses, shots at the keeper), and your goals and
+  saves are listed as good plays. Click a clock to jump the in-game replay there.
 - **Coach**: the 3 things to work on, what went well, and clock times to rewatch
 - **Heat maps**: where you, your team, the opponents or the ball spent the game, with time per third and half
 - **Shots**: a shot map (goal / saved / missed), shooting % for every player and team, and a shot list
 - **Stats**: every stat for every player side by side, best in lobby highlighted
 - **Boost**: your boost over the whole match with goals marked
 
-Plus **My trends** across all your games (record, what keeps coming up, any stat over time) and
+Plus **My trends** across all your games (record, your recurring decision mistakes and how many goals they cost, what keeps coming up, any stat over time) and
 **Rename** to give replays your own names. New replays show up automatically after each match.
 
 ### Start it
