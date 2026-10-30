@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import statsapi
+from . import shortcut, statsapi
 from .library import Library, data_dir
 from .live.server import LiveServer
 from .update import Updater
@@ -95,6 +95,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(lib.trends())
         if url.path == "/api/update":
             return self._json(UPDATER.status())
+        if url.path == "/api/shortcut":
+            return self._json(shortcut_status(lib))
         if url.path == "/api/live":
             return self._json(live_status(lib))
         if url.path == "/api/live/history":
@@ -119,6 +121,11 @@ class Handler(BaseHTTPRequestHandler):
             lib.save_settings()
             return self._json({"ok": True, "you": lib.you(), "folders": lib.settings["folders"],
                                "auto_update": lib.settings.get("auto_update", True)})
+        if url.path == "/api/shortcut":
+            res = shortcut.create() if body.get("create") else shortcut.remove()
+            lib.settings["shortcut_offered"] = True
+            lib.save_settings()
+            return self._json({**res, **shortcut_status(lib)})
         if url.path == "/api/pick-folder":
             folder = pick_folder()
             if folder and folder not in lib.settings["folders"]:
@@ -242,6 +249,14 @@ def plugin_installed() -> bool:
     return (_bakkesmod_dir() / "plugins" / "RLCoachLive.dll").is_file()
 
 
+def shortcut_status(lib: Library) -> dict:
+    """Whether there is a desktop shortcut, and whether to ask about one (only once, on first run)."""
+    if not shortcut.SUPPORTED:
+        return {"supported": False, "exists": False, "offer": False}
+    has = shortcut.exists()
+    return {"supported": True, "exists": has, "offer": not has and not lib.settings.get("shortcut_offered")}
+
+
 def live_status(lib: Library) -> dict:
     install = statsapi.find_install(lib.settings.get("rl_install"))
     stats = STATS.snapshot()
@@ -325,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
     UPDATER.cleanup()
     UPDATER.start()
     sync_plugin()
+    threading.Thread(target=shortcut.repair, daemon=True).start()
     STATS = statsapi.StatsClient()
     LIVE = LiveServer(data_dir())
     _save_launch_command()
