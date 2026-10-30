@@ -37,6 +37,10 @@ Plus **My trends** across all your games (record, your recurring decision mistak
   pin it to your taskbar. Once the code is on GitHub, the included GitHub Action builds the .exe for you.
 - **Any OS:** `pip install ".[app]"` then run `rlcoach-app`.
 
+The first time RL Coach opens on Windows it offers to put a shortcut on your desktop. Click
+**Add desktop shortcut**, or turn it on or off any time in **Settings → Shortcut on my desktop**. The
+shortcut survives updates, and if you move `RLCoach.exe` it follows the next time you open it.
+
 The first time you open a replay it takes 5–20 seconds to analyse; after that it is cached and instant.
 **Analyse all** does your whole folder in the background. Your settings and cache live in
 `%APPDATA%\rlcoach` (Windows) or `~/.rlcoach`.

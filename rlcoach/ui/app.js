@@ -589,6 +589,16 @@ $("#btn-settings").onclick = async () => {
   $("#set-auto-update").checked = u.auto;
   $("#set-version").textContent = u.current + (u.latest && u.latest !== "v" + u.current ? ` (latest ${u.latest})` : "");
   $("#settings").showModal();
+  const sc = await api("/api/shortcut");
+  $("#set-shortcut-row").hidden = !sc.supported;
+  $("#set-shortcut").checked = sc.exists;
+};
+$("#set-shortcut").onchange = async (e) => {
+  const r = await api("/api/shortcut", { create: e.target.checked });
+  if (!r.ok) toast(r.error, 4000);
+  else toast(r.exists ? "Added RL Coach to your desktop." : "Removed the desktop shortcut.");
+  e.target.checked = r.exists;
+  $("#shortcut-bar")?.remove();
 };
 $("#set-auto-update").onchange = (e) => api("/api/settings", { auto_update: e.target.checked });
 $("#check-now").onclick = async (e) => {
@@ -817,5 +827,25 @@ async function pollUpdate() {
 }
 pollUpdate();
 setInterval(pollUpdate, 15000);
+
+// ------------------------------------------------------------------ desktop shortcut
+// Asked once, the first time RL Coach opens. Settings can add or remove it later.
+async function offerShortcut() {
+  let sc;
+  try { sc = await api("/api/shortcut"); } catch { return; }
+  if (!sc.offer) return;
+  const bar = document.createElement("div");
+  bar.id = "shortcut-bar"; bar.className = "update-bar";
+  bar.innerHTML = `Put RL Coach on your desktop so it's one double-click away?
+    <button class="primary" id="sc-yes">Add desktop shortcut</button> <button class="ghost" id="sc-no">No thanks</button>`;
+  document.body.prepend(bar);
+  $("#sc-yes").onclick = async () => {
+    const r = await api("/api/shortcut", { create: true });
+    bar.remove();
+    toast(r.ok ? "Added RL Coach to your desktop." : r.error, 4000);
+  };
+  $("#sc-no").onclick = async () => { bar.remove(); await api("/api/shortcut", { create: false }); };
+}
+offerShortcut();
 
 if (location.hash === "#live") renderLive();
